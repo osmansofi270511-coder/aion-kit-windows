@@ -182,3 +182,7 @@ exact output and your `python --version` and `$PSVersionTable.PSVersion`.
 ## License
 
 MIT — see `LICENSE`.
+
+## Status
+
+CI is green on windows-latest for Python 3.9 and 3.12.
