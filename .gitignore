@@ -1,0 +1,8 @@
+# Evidence and secrets never belong in the repository.
+out/
+*-password.txt
+*-evidence.txt
+
+__pycache__/
+*.pyc
+.venv/

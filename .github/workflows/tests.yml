@@ -1,0 +1,87 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: python ${{ matrix.python }} on windows
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Show versions
+        run: |
+          python --version
+          $PSVersionTable.PSVersion
+        shell: pwsh
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+        shell: pwsh
+
+  powershell:
+    name: powershell script checks
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse every script
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem -Path scripts -Filter *.ps1 -Recurse | ForEach-Object {
+            $errors = $null
+            $tokens = $null
+            $null = [System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors.Count -gt 0) {
+              $failed = $true
+              Write-Host "FAIL $($_.Name)"
+              $errors | ForEach-Object { Write-Host "  line $($_.Extent.StartLineNumber): $($_.Message)" }
+            } else {
+              Write-Host "ok   $($_.Name)"
+            }
+          }
+          if ($failed) { exit 1 }
+
+      - name: Account description stays inside the 48-character limit
+        shell: pwsh
+        run: |
+          # New-LocalUser rejects a longer Description and the account is not
+          # created. A parse check does not catch it: the syntax is valid.
+          $bad = $false
+          Get-ChildItem -Path scripts -Filter *.ps1 -Recurse | ForEach-Object {
+            foreach ($line in (Get-Content $_.FullName)) {
+              if ($line -match "^\s*\`$description\s*=\s*'([^']*)'") {
+                $len = $Matches[1].Length
+                Write-Host "$($_.Name): description is $len characters"
+                if ($len -gt 48) { $bad = $true; Write-Host "  FAIL: over the 48-character limit" }
+              }
+            }
+          }
+          if ($bad) { exit 1 }
+
+      - name: No icacls permission arguments written inline
+        shell: pwsh
+        run: |
+          # "$env:USERNAME:(F)" inline gets split and icacls answers
+          # Invalid parameter "(F)". Build the string into a variable first.
+          $hits = Select-String -Path scripts\*.ps1 -Pattern 'icacls.*\$env:.*:\(' -AllMatches
+          if ($hits) {
+            $hits | ForEach-Object { Write-Host "FAIL $($_.Path):$($_.LineNumber): $($_.Line.Trim())" }
+            exit 1
+          }
+          Write-Host "ok: no inline icacls permission arguments"
